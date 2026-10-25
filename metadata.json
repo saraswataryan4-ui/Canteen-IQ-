@@ -1,0 +1,6 @@
+{
+  "name": "CanteenIQ — Smart Campus Dining",
+  "description": "Smart campus canteen web application featuring digital menu ordering, live order token tracking, interactive table reservations, a Gemma AI-ready dining assistant, and a real-time staff management dashboard.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

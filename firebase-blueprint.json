@@ -1,0 +1,327 @@
+{
+  "entities": {
+    "Order": {
+      "title": "Order",
+      "description": "Customer order placed in the campus dining application",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique order identifier",
+          "maxLength": 128
+        },
+        "token": {
+          "type": "string",
+          "description": "Short human-readable order token e.g. CQ-1024",
+          "maxLength": 32
+        },
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of customer placing order",
+          "maxLength": 128
+        },
+        "customerEmail": {
+          "type": "string",
+          "description": "Email address of the authenticated customer",
+          "maxLength": 128
+        },
+        "customerName": {
+          "type": "string",
+          "description": "Customer contact name",
+          "maxLength": 100
+        },
+        "customerPhone": {
+          "type": "string",
+          "description": "Customer contact phone number",
+          "maxLength": 25
+        },
+        "deliveryAddress": {
+          "type": "string",
+          "description": "Campus delivery address or pickup desk",
+          "maxLength": 250
+        },
+        "deliveryNotes": {
+          "type": "string",
+          "description": "Optional delivery instructions or dietary note",
+          "maxLength": 300
+        },
+        "totalAmount": {
+          "type": "number",
+          "description": "Total order amount in Indian Rupees (INR)"
+        },
+        "status": {
+          "type": "string",
+          "description": "Lifecycle status of order",
+          "enum": ["Received", "Preparing", "Ready", "Collected", "Delivered"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Server timestamp when order was created"
+        },
+        "estimatedMinutes": {
+          "type": "number",
+          "description": "Estimated preparation time in minutes"
+        }
+      },
+      "required": [
+        "id",
+        "token",
+        "userId",
+        "customerEmail",
+        "customerName",
+        "customerPhone",
+        "deliveryAddress",
+        "totalAmount",
+        "status"
+      ]
+    },
+    "MenuItem": {
+      "title": "MenuItem",
+      "description": "Food catalog item available for ordering",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Item identifier",
+          "maxLength": 64
+        },
+        "name": {
+          "type": "string",
+          "description": "Dish title",
+          "maxLength": 100
+        },
+        "price": {
+          "type": "number",
+          "description": "Price in INR"
+        },
+        "category": {
+          "type": "string",
+          "description": "Food category",
+          "maxLength": 50
+        },
+        "description": {
+          "type": "string",
+          "description": "Item description",
+          "maxLength": 300
+        },
+        "prepMinutes": {
+          "type": "number",
+          "description": "Estimated prep minutes"
+        },
+        "calories": {
+          "type": "number",
+          "description": "Estimated calories"
+        },
+        "stock": {
+          "type": "number",
+          "description": "Available stock count"
+        },
+        "isAvailable": {
+          "type": "boolean",
+          "description": "Whether item is currently available to order"
+        },
+        "imageUrl": {
+          "type": "string",
+          "description": "Image asset path or URL",
+          "maxLength": 500
+        },
+        "dietaryNote": {
+          "type": "string",
+          "description": "Dietary indicator e.g. Pure Veg",
+          "maxLength": 50
+        }
+      },
+      "required": ["id", "name", "price", "category", "stock", "isAvailable"]
+    },
+    "Admin": {
+      "title": "Admin",
+      "description": "Authorized administrator user profile",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "description": "Admin email address",
+          "maxLength": 128
+        },
+        "role": {
+          "type": "string",
+          "description": "Admin authorization role",
+          "maxLength": 32
+        }
+      },
+      "required": ["email", "role"]
+    },
+    "Customer": {
+      "title": "Customer",
+      "description": "Registered customer profile with unique customerId",
+      "type": "object",
+      "properties": {
+        "customerId": {
+          "type": "string",
+          "description": "Unique customer identifier e.g. CUST-XXXXXXXX",
+          "maxLength": 32
+        },
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID or unique customer UID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Customer full name",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "Verified customer email address",
+          "maxLength": 128
+        },
+        "phone": {
+          "type": "string",
+          "description": "Customer phone number",
+          "maxLength": 25
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "description": "Whether email is verified"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Registration timestamp"
+        },
+        "status": {
+          "type": "string",
+          "description": "Account status",
+          "enum": ["active", "suspended"]
+        },
+        "provider": {
+          "type": "string",
+          "description": "Sign-in provider e.g. google.com or email_otp",
+          "maxLength": 32
+        }
+      },
+      "required": ["customerId", "uid", "name", "email", "phone", "emailVerified", "status"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Authorized canteen staff profile with role and permissions",
+      "type": "object",
+      "properties": {
+        "staffId": {
+          "type": "string",
+          "description": "Unique staff ID e.g. STF-101",
+          "maxLength": 32
+        },
+        "staffUid": {
+          "type": "string",
+          "description": "Unique staff user ID",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "description": "Staff member full name",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "description": "Staff email address",
+          "maxLength": 128
+        },
+        "role": {
+          "type": "string",
+          "description": "Assigned job role title",
+          "maxLength": 64
+        },
+        "permissions": {
+          "type": "array",
+          "description": "List of granted staff permissions",
+          "items": { "type": "string" }
+        },
+        "status": {
+          "type": "string",
+          "description": "Account status",
+          "enum": ["active", "inactive"]
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Staff creation timestamp"
+        },
+        "createdBy": {
+          "type": "string",
+          "description": "Admin email who created the staff",
+          "maxLength": 128
+        }
+      },
+      "required": ["staffId", "staffUid", "name", "email", "role", "permissions", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Administrative actions audit log",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique audit log ID",
+          "maxLength": 128
+        },
+        "adminEmail": {
+          "type": "string",
+          "description": "Admin email who performed the action",
+          "maxLength": 128
+        },
+        "action": {
+          "type": "string",
+          "description": "Admin action",
+          "maxLength": 64
+        },
+        "targetStaffId": {
+          "type": "string",
+          "description": "Target staff ID affected",
+          "maxLength": 64
+        },
+        "targetStaffName": {
+          "type": "string",
+          "description": "Target staff name affected",
+          "maxLength": 100
+        },
+        "details": {
+          "type": "string",
+          "description": "Description of action taken",
+          "maxLength": 500
+        },
+        "timestamp": {
+          "type": "string",
+          "description": "ISO timestamp of the audit entry"
+        }
+      },
+      "required": ["id", "adminEmail", "action", "targetStaffId", "details", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/orders/{orderId}": {
+      "schema": "Order",
+      "description": "Customer food orders with role-based access control"
+    },
+    "/menuItems/{menuItemId}": {
+      "schema": "MenuItem",
+      "description": "Public food menu items browsable by visitors and managed by staff"
+    },
+    "/admins/{userId}": {
+      "schema": "Admin",
+      "description": "Protected administrator whitelist collection"
+    },
+    "/customers/{userId}": {
+      "schema": "Customer",
+      "description": "Customer account profiles with unique customerId"
+    },
+    "/staff/{staffId}": {
+      "schema": "StaffMember",
+      "description": "Canteen staff records managed by administrator"
+    },
+    "/audit_logs/{logId}": {
+      "schema": "AuditLog",
+      "description": "Administrative audit trail logs"
+    }
+  }
+}
+

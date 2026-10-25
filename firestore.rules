@@ -1,0 +1,133 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all unknown collections
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == 'google.com'
+      );
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid)) ||
+        (
+          (request.auth.token.email == 'saraswataryan2312@gmail.com' || request.auth.token.email == 'saraswataryan87@gmail.com') &&
+          (request.auth.token.email_verified == true || request.auth.token.firebase.sign_in_provider == 'google.com')
+        )
+      );
+    }
+
+    function isValidOrder(data) {
+      return data.keys().hasAll([
+        'id', 'token', 'userId', 'customerEmail', 'customerName',
+        'customerPhone', 'deliveryAddress', 'totalAmount', 'status', 'items'
+      ]) &&
+      data.id is string && data.id.size() <= 128 &&
+      data.token is string && data.token.size() <= 32 &&
+      data.userId is string && data.userId.size() <= 128 &&
+      data.customerEmail is string && data.customerEmail.size() <= 128 &&
+      data.customerName is string && data.customerName.size() <= 100 &&
+      data.customerPhone is string && data.customerPhone.size() <= 25 &&
+      data.deliveryAddress is string && data.deliveryAddress.size() <= 250 &&
+      data.totalAmount is number && data.totalAmount >= 0 &&
+      data.items is list && data.items.size() > 0 && data.items.size() <= 50 &&
+      data.status in ['Received', 'Preparing', 'Ready', 'Collected', 'Delivered'];
+    }
+
+    function isValidMenuItem(data) {
+      return data.keys().hasAll(['id', 'name', 'price', 'category', 'stock', 'isAvailable']) &&
+      data.id is string && data.id.size() <= 64 &&
+      data.name is string && data.name.size() <= 100 &&
+      data.price is number && data.price >= 0 &&
+      data.category is string && data.category.size() <= 50 &&
+      data.stock is number && data.stock >= 0 &&
+      data.isAvailable is bool;
+    }
+
+    // Public Food Menu Catalog (anyone can browse without logging in)
+    match /menuItems/{menuItemId} {
+      allow get, list: if true;
+      allow create: if isSignedIn() && isValidId(menuItemId) && isAdmin() && isValidMenuItem(incoming());
+      allow update: if isSignedIn() && isValidId(menuItemId) && isAdmin() && isValidMenuItem(incoming());
+      allow delete: if isSignedIn() && isValidId(menuItemId) && isAdmin();
+    }
+
+    // Customer Orders with Strict RBAC (Customers see/create only their own, Admins can view/update all)
+    match /orders/{orderId} {
+      allow get: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+
+      allow create: if isSignedIn() &&
+        isValidId(orderId) &&
+        incoming().userId == request.auth.uid &&
+        isValidOrder(incoming()) &&
+        incoming().status == 'Received' &&
+        incoming().createdAt == request.time;
+
+      allow update: if isSignedIn() &&
+        isValidId(orderId) &&
+        isAdmin() &&
+        isValidOrder(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt;
+
+      allow delete: if isSignedIn() && isValidId(orderId) && isAdmin();
+    }
+
+    // Customer Account Profiles
+    match /customers/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && isAdmin();
+      allow create, update: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow delete: if isSignedIn() && isAdmin();
+    }
+
+    // Staff Records (Managed by Administrator)
+    match /staff/{staffId} {
+      allow get, list: if isSignedIn();
+      allow create, update, delete: if isSignedIn() && isAdmin();
+    }
+
+    // Administrative Audit Logs
+    match /audit_logs/{logId} {
+      allow get, list: if isSignedIn() && isAdmin();
+      allow create: if isSignedIn() && isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Admin Whitelist collection
+    match /admins/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+      allow list: if isSignedIn() && isAdmin();
+      allow write: if isSignedIn() && isAdmin();
+    }
+
+    // Connection testing doc
+    match /test/{docId} {
+      allow read, write: if true;
+    }
+  }
+}
