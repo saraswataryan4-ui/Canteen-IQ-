@@ -232,9 +232,21 @@ export const CustomerAuthModal: React.FC<CustomerAuthModalProps> = ({
         return;
       }
 
+      // const cust = data.customer as CustomerAccount;
+      // setVerifiedCustomer(cust);
+      // loginWithEmailOtp(cust);
       const cust = data.customer as CustomerAccount;
+
+      if (typeof data.firebaseCustomToken !== 'string' ||
+          !data.firebaseCustomToken) {
+        setErrorMessage(
+          'Verification succeeded, but Firebase session could not be created. Please try again.'
+        );
+        return;
+      }
+
       setVerifiedCustomer(cust);
-      loginWithEmailOtp(cust);
+      await loginWithEmailOtp(cust, data.firebaseCustomToken);
 
       // Brief delay to display success badge
       setTimeout(() => {

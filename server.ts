@@ -2,6 +2,9 @@ import fs from 'fs';
 import dotenv from 'dotenv';
 import crypto from 'crypto';
 import express from 'express';
+import { initializeApp, cert, getApps } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { getAuth as getAdminAuth } from 'firebase-admin/auth';
 import type { Request, Response } from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -81,10 +84,49 @@ function syncSecretsFromDisk(): void {
 dotenv.config();
 syncSecretsFromDisk();
 
+function initializeFirebaseAdmin() {
+  syncSecretsFromDisk();
+
+  const projectId = process.env.FIREBASE_PROJECT_ID?.trim();
+  const clientEmail = process.env.FIREBASE_CLIENT_EMAIL?.trim();
+  const privateKey = process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n').trim();
+
+  if (!projectId || !clientEmail || !privateKey) {
+    console.warn(
+      '[Firebase Admin] Missing Firebase Admin secrets. Firestore persistence is unavailable.'
+    );
+    return null;
+  }
+  // let adminAuth: ReturnType<typeof getAdminAuth> | null = null;
+  try {
+    const existingApp =
+      getApps().find((app) => app.name === 'canteeniq-admin');
+
+    const adminApp = existingApp ?? initializeApp(
+      {
+        credential: cert({ projectId, clientEmail, privateKey }),
+        projectId,
+      },
+      'canteeniq-admin'
+    );
+
+    adminAuth = getAdminAuth(adminApp);
+
+    console.info('[Firebase Admin] Initialized successfully.');
+    return getFirestore(adminApp);
+  } catch (error) {
+    console.error('[Firebase Admin] Initialization failed:', error);
+    return null;
+  }
+}
+
+let adminAuth: ReturnType<typeof getAdminAuth> | null = null;
+const adminDb = initializeFirebaseAdmin();
+
 const PORT = Number(process.env.PORT) || 3000;
 const GEMMA_MODEL_ID = process.env.GEMINI_MODEL || 'gemma-4-26b-a4b-it';
 const MAX_GEMMA_ATTEMPTS = 3; // 1 initial attempt + up to 2 transient retries
-const PER_ATTEMPT_TIMEOUT_MS = 50000;
+const PER_ATTEMPT_TIMEOUT_MS = 120000;
 const TRANSIENT_HTTP_STATUSES = new Set([408, 500, 502, 503, 504]);
 
 interface ClientMenuSnapshotItem {
@@ -596,6 +638,30 @@ function isTransientGemmaError(
   );
 }
 
+async function getVerifiedFirebaseUser(req: Request) {
+  if (!adminAuth) {
+    throw new Error('FIREBASE_AUTH_UNAVAILABLE');
+  }
+
+  const authorization = req.headers.authorization;
+
+  if (!authorization?.startsWith('Bearer ')) {
+    throw new Error('UNAUTHORIZED');
+  }
+
+  const idToken = authorization.slice('Bearer '.length).trim();
+
+  if (!idToken) {
+    throw new Error('UNAUTHORIZED');
+  }
+
+  try {
+    return await adminAuth.verifyIdToken(idToken, true);
+  } catch {
+    throw new Error('UNAUTHORIZED');
+  }
+}
+
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: '128kb' }));
@@ -670,38 +736,104 @@ async function startServer() {
     });
   });
 
-  app.post('/api/orders', (req: Request, res: Response) => {
-    const incoming = sanitizeOrderPayload(
-      (req.body as { order?: unknown } | undefined)?.order ?? req.body
-    );
-    if (!incoming) {
-      res.status(400).json({
-        ok: false,
-        error: 'Invalid order payload.',
-      });
-      return;
-    }
+  app.post('/api/orders', async (req: Request, res: Response) => {
+    try {
+      const verifiedUser = await getVerifiedFirebaseUser(req);
 
-    const existingIdx = serverOrders.findIndex(
-      (o) =>
-        o.id === incoming.id ||
-        o.token.toLowerCase() === incoming.token.toLowerCase()
-    );
+      if (!adminDb) {
+        res.status(503).json({
+          ok: false,
+          error: 'Order storage is unavailable.',
+        });
+        return;
+      }
 
-    if (existingIdx >= 0) {
-      serverOrders = serverOrders.map((o, idx) =>
-        idx === existingIdx ? incoming : o
+      const incoming = sanitizeOrderPayload(
+        (req.body as { order?: unknown } | undefined)?.order ?? req.body
       );
-    } else {
-      serverOrders = [incoming, ...serverOrders];
-    }
 
-    res.json({
-      ok: true,
-      order: incoming,
-      orders: serverOrders,
-      updatedAt: new Date().toISOString(),
-    });
+      if (!incoming) {
+        res.status(400).json({
+          ok: false,
+          error: 'Invalid order payload.',
+        });
+        return;
+      }
+
+      // Prevent unexpected Firestore document IDs.
+      if (
+        typeof incoming.id !== 'string' ||
+        !/^[A-Za-z0-9_-]{1,128}$/.test(incoming.id)
+      ) {
+        res.status(400).json({
+          ok: false,
+          error: 'Invalid order ID.',
+        });
+        return;
+      }
+
+      // Never trust ownership details sent in the order body.
+      const orderToSave = {
+        ...incoming,
+        userId: verifiedUser.uid,
+        customerEmail: verifiedUser.email ?? null,
+        status: 'Received',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const orderRef = adminDb.collection('orders').doc(incoming.id);
+
+      // A customer must not overwrite an existing order.
+      const existingOrder = await orderRef.get();
+
+      if (existingOrder.exists) {
+        res.status(409).json({
+          ok: false,
+          error: 'This order ID already exists. Please retry with a new order ID.',
+        });
+        return;
+      }
+
+      await orderRef.create(orderToSave);
+
+      // Update the in-memory list only after Firestore confirms the write.
+      serverOrders = [
+        orderToSave as Order,
+        ...serverOrders.filter((order) => order.id !== incoming.id),
+      ];
+
+      res.status(201).json({
+        ok: true,
+        order: orderToSave,
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : 'UNKNOWN_ERROR';
+
+      if (message === 'UNAUTHORIZED') {
+        res.status(401).json({
+          ok: false,
+          error: 'Please sign in again before placing an order.',
+        });
+        return;
+      }
+
+      if (message === 'FIREBASE_AUTH_UNAVAILABLE') {
+        res.status(503).json({
+          ok: false,
+          error: 'Authentication is temporarily unavailable.',
+        });
+        return;
+      }
+
+      console.error('[Orders] Firestore write failed:', error);
+
+      res.status(500).json({
+        ok: false,
+        error: 'Order could not be saved. Please try again.',
+      });
+    }
   });
 
   app.post('/api/orders/sync', (req: Request, res: Response) => {
@@ -938,7 +1070,7 @@ async function startServer() {
     });
   });
 
-  app.post('/api/auth/verify-otp', (req: Request, res: Response) => {
+  app.post('/api/auth/verify-otp', async (req: Request, res: Response) => {
     const body = (req.body ?? {}) as { email?: string; code?: string };
     const email = typeof body.email === 'string' ? body.email.trim().toLowerCase() : '';
     const code = typeof body.code === 'string' ? body.code.trim() : '';
@@ -1016,11 +1148,49 @@ async function startServer() {
       if (record.phone && !customer.phone) customer.phone = record.phone;
     }
 
+    if (!adminAuth) {
+      res.status(503).json({
+        ok: false,
+        error: 'Firebase Authentication is unavailable.',
+      });
+      return;
+    }
+
+    let firebaseUser;
+
+    try {
+      firebaseUser = await adminAuth.getUserByEmail(customer.email);
+    } catch (error) {
+      const authError = error as { code?: string };
+
+      if (authError.code !== 'auth/user-not-found') {
+        console.error('[OTP] Firebase user lookup failed:', error);
+        res.status(500).json({
+          ok: false,
+          error: 'Unable to complete sign-in.',
+        });
+        return;
+      }
+
+      firebaseUser = await adminAuth.createUser({
+        email: customer.email,
+        emailVerified: true,
+        displayName: customer.name,
+        disabled: false,
+      });
+    }
+
+    const firebaseCustomToken = await adminAuth.createCustomToken(
+      firebaseUser.uid,
+      { customer: true }
+    );
+
     res.json({
       ok: true,
       verified: true,
       customer,
       customerId: customer.customerId,
+      firebaseCustomToken,
     });
   });
 

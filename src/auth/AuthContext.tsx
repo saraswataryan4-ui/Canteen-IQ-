@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
-import { User, onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
+import { User, onAuthStateChanged, signInWithPopup, signOut, signInWithCustomToken, } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db, googleAuthProvider } from '../firebase';
 import {
@@ -26,7 +26,11 @@ interface AuthContextValue {
   isAdmin: boolean;
   authLoading: boolean;
   signInWithGoogle: () => Promise<void>;
-  loginWithEmailOtp: (account: CustomerAccount) => void;
+  // loginWithEmailOtp: (account: CustomerAccount) => void;
+  loginWithEmailOtp: (
+    account: CustomerAccount,
+    firebaseCustomToken: string
+  ) => Promise<void>;
   updateCustomerPhone: (phone: string) => Promise<void>;
   signOutUser: () => Promise<void>;
   staffSession: StaffSession | null;
@@ -173,10 +177,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
-  const loginWithEmailOtp = (account: CustomerAccount) => {
+  // const loginWithEmailOtp = (account: CustomerAccount) => {
+  //   setCustomer(account);
+  //   try {
+  //     localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(account));
+  //   } catch {
+  //     // Ignore storage exception
+  //   }
+  // };
+  const loginWithEmailOtp = async (
+    account: CustomerAccount,
+    firebaseCustomToken: string
+  ): Promise<void> => {
+    await signInWithCustomToken(auth, firebaseCustomToken);
+
     setCustomer(account);
+
     try {
-      localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(account));
+      localStorage.setItem(
+        CUSTOMER_STORAGE_KEY,
+        JSON.stringify(account)
+      );
     } catch {
       // Ignore storage exception
     }
